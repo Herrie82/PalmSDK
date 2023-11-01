@@ -1,0 +1,28 @@
+#!/bin/sh
+
+# Make sure "localhost" exists in /etc/hosts
+if ! grep "localhost" /etc/hosts | grep -s -q "127.0.0.1" ; then
+  echo ""                              >> /etc/hosts
+  echo "# Added by palm-sdk package:"  >> /etc/hosts
+  echo "127.0.0.1	localhost"     >> /etc/hosts
+fi
+
+# Make sure "qemu" exists in /etc/hosts
+if ! grep -s -q "qemu" /etc/hosts ; then
+  echo ""                              >> /etc/hosts
+  echo "# Added by palm-sdk package:"  >> /etc/hosts
+  echo "127.0.0.1	qemu"          >> /etc/hosts
+fi
+
+# If there's NO device entry in hosts, add one with 2.101 address...
+if ! grep -s -q "device" /etc/hosts ; then
+  echo ""                              >> /etc/hosts
+  echo "# Added by palmtools package:" >> /etc/hosts
+  echo "192.168.2.101	device"        >> /etc/hosts
+fi
+
+# Remove libsoup files if running on Ubuntu 9.x...
+if grep -s -q "Ubuntu 9" /etc/issue ; then
+  rm -f /opt/PalmSDK/0.1/lib/libsoup*
+fi
+

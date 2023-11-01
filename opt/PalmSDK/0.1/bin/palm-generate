@@ -1,0 +1,59 @@
+#!/bin/bash
+set -e
+
+abs_path()
+{
+	echo "$(cd "${1%/*}" 2>/dev/null && echo "$PWD"/"${1##*/}")" || exit 1
+}
+
+where_am_i()
+{
+	local realme="$1"
+	while [ -L "$realme" ]; do
+		realme=`readlink "$realme"`
+	done
+	echo "$(cd "${realme%/*}" 2>/dev/null && pwd)" || exit 1
+}
+
+java_version()
+{
+	java -version 2>&1 | grep "^java version" | cut -d ' ' -f 3 | cut -c 2-4
+}
+
+# check java version
+JAVA_VER=$(java_version)
+if [ -z "$JAVA_VER" ]; then
+	echo "error: java not installed"
+	exit 1
+fi
+if [[ $JAVA_VER < 1.5 ]]; then
+	echo "error: java 1.5 or greater is required"
+	exit 1
+fi
+
+# the jar file
+JAR_FILE="webos-tools.jar"
+
+# the command name
+PALM_COMMAND="$(basename "$0")"
+
+HERE="$(where_am_i "$0")"
+
+# look for relative dirs
+JARS_DIR="$(abs_path "$HERE/../share/jars")"
+
+# the vm arguments
+VM_ARGS[0]=-Dpalm.command=$PALM_COMMAND
+
+# the jar path
+JAR="$JARS_DIR/$JAR_FILE"
+
+# set IFS to end-of-line
+ORIGIFS=$IFS
+IFS=`echo -en "\n\b"`
+
+# launch the app
+java ${VM_ARGS[@]} -jar $JAR $@
+
+# restore IFS
+IFS=$ORIGIFS

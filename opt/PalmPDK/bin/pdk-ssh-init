@@ -1,0 +1,225 @@
+#!/bin/sh
+
+TARGET_SSH_USER=root
+
+TARGET_SSH_DEFAULT_HOST=localhost
+TARGET_SSH_DEFAULT_PORT=10022
+TARGET_SSH_QEMU_HOST=localhost
+TARGET_SSH_QEMU_PORT=5522
+
+#REMOTE_SSH_DIR=/home/$TARGET_SSH_USER/.ssh
+REMOTE_SSH_DIR=~$TARGET_SSH_USER/.ssh
+LOCAL_SSH_DIR=$HOME/.ssh
+LOCAL_SSH_KEY=$LOCAL_SSH_DIR/id_dsa.pub
+
+# command used to launch this script
+CMD=$0
+
+# name of this script
+CMD_NAME=$(basename $0 .sh)
+
+#
+# usage
+#
+# Prints usage message
+#
+usage()
+{
+    echo "Configures the given target device for ssh access."
+    echo "(Assumes device, 'root' user and empty password.)"
+    echo ""
+    echo "Usage: $CMD_NAME [options] <HOST:PORT>"
+    echo ""
+    echo "where options are:"
+    echo "    -f  replace existing keys"
+    echo ""
+    echo "e.g. for Palm Emulator, use \"$CMD_NAME localhost:5522\""
+    echo "     for device, use \"$CMD_NAME localhost:10022\""
+}
+
+#
+# ssh_keygen
+#
+# Generates local ssh keys
+#
+ssh_keygen()
+{
+	local CMD="ssh-keygen -q -t dsa"
+	local TIMEOUT=30
+	expect -c "set timeout $TIMEOUT; spawn $CMD; expect {
+		\"Enter file in which to save the key\" {
+			send \"\\r\"
+			exp_continue
+		} \"Enter passphrase\" {
+			send \"\\r\"
+			exp_continue
+		} \"Enter same passphrase\" {
+			send \"\\r\"
+			exp_continue
+		} timeout {
+			send_user \"timeout\\r\"
+			exit 1
+		} eof
+	}"
+}
+
+#
+# ssh_test
+#
+# Returns 0 if an ssh command can be sent successfully.
+#
+ssh_test()
+{
+	local CMD="ssh -p $TARGET_SSH_PORT $TARGET_SSH_USER@$TARGET_SSH_HOST echo Hello"
+	local TIMEOUT=10
+	expect -c "set timeout $TIMEOUT; spawn $CMD; expect {
+		\"Are you sure you want to continue connecting (yes/no)?\" {
+            exit 1
+		} \"$TARGET_SSH_USER@$TARGET_SSH_HOST's password:\" {
+            exit 1
+		} timeout {
+			exit 1
+		} eof {
+            exit 1
+        } \"Hello\" {
+            exit 0
+        }
+	}"
+}
+
+#
+# ssh_exec <command> <args...>
+#
+# Executes shell command on target
+#
+ssh_exec()
+{
+	local CMD="ssh -p $TARGET_SSH_PORT $TARGET_SSH_USER@$TARGET_SSH_HOST $*"
+	local TIMEOUT=60
+	expect -c "set timeout $TIMEOUT; spawn $CMD; expect {
+		\"Are you sure you want to continue connecting (yes/no)?\" {
+			send \"yes\\r\"
+			exp_continue
+		} \"$TARGET_SSH_USER@$TARGET_SSH_HOST's password:\" {
+			send \"\\r\"
+			exp_continue
+		} timeout {
+			send_user \"timeout\\r\"
+			exit 1
+		} eof
+	}"
+}
+
+#
+# ssh_put <from/local/file> <to/remote/file>
+#
+# Copies file to target
+#
+ssh_put()
+{
+	local SRC=$1
+	local DEST=$2
+	local CMD="scp -P $TARGET_SSH_PORT $SRC $TARGET_SSH_USER@$TARGET_SSH_HOST:$DEST"
+	local TIMEOUT=60
+	expect -c "set timeout $TIMEOUT; spawn $CMD; expect {
+		\"Are you sure you want to continue connecting (yes/no)?\" {
+			send \"yes\\r\"
+			exp_continue
+		} \"$TARGET_SSH_USER@$TARGET_SSH_HOST's password:\" {
+			send \"\\r\"
+			exp_continue
+		} timeout {
+			send_user \"timeout\\r\"
+			exit 1
+		} eof
+	}"
+}
+
+if [ $# -eq 0 ]
+then
+usage
+exit 0
+fi
+
+if [ $# -eq 2 ]
+then
+	if [ "$1" = "-f" ]
+	then
+		REPLACE_KEYS=1
+        shift
+	else
+		usage
+		exit 1
+	fi
+fi
+
+if [ $# -ne 1 ]
+then
+usage
+exit 1
+fi
+
+if [ "$1" = "-f" ]
+then
+	usage
+	exit 1
+fi
+
+HOSTARGS=$1
+# split into host and port
+TARGET_SSH_HOST=${HOSTARGS%%:*}
+TARGET_SSH_PORT=${HOSTARGS#*:}
+if [ "$TARGET_SSH_PORT" = "$TARGET_SSH_HOST" ]
+then
+	TARGET_SSH_PORT=
+fi
+if [ -z "$TARGET_SSH_PORT" ]
+then
+	if [ "$TARGET_SSH_HOST" = "$TARGET_SSH_QEMU_HOST" ]
+	then
+		TARGET_SSH_PORT=$TARGET_SSH_QEMU_PORT
+	else
+		TARGET_SSH_PORT=$TARGET_SSH_DEFAULT_PORT
+	fi
+fi
+
+
+if [ $REPLACE_KEYS ]
+then
+	if [ -f "$LOCAL_SSH_KEY" ]
+	then
+		echo "replacing keys"
+	fi
+	rm -rf $LOCAL_SSH_DIR
+fi
+
+if [ -f "$LOCAL_SSH_KEY" ]
+then
+	echo "using exist keys"
+else
+	ssh_keygen
+fi
+
+if [ $REPLACE_KEYS ]
+then
+	ssh_exec "rm -rf $REMOTE_SSH_DIR"
+fi
+
+ssh_test
+if [ $? -eq 0 ]
+then
+	echo "ssh already configured."
+	exit 0
+else
+	echo
+fi
+
+ssh_put $LOCAL_SSH_KEY /tmp/keys
+ssh_exec "mkdir -p $REMOTE_SSH_DIR"
+#TODO check for duplicate keys
+ssh_exec "cat /tmp/keys >> $REMOTE_SSH_DIR/authorized_keys"
+ssh_exec "rm /tmp/keys"
+ssh_exec "chmod 600 $REMOTE_SSH_DIR/authorized_keys"
+
+echo "Done."
+

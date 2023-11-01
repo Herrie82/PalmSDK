@@ -1,0 +1,11 @@
+{
+	"title": "Hybrid Keyboard",
+	"type": "web",
+	"main": "index.html",
+    "icon": "pdk_logo_64x64.png",
+	"id": "com.palmdts.app.hybridkeyboard",
+	"version": "1.0.0",
+	"vendor": "HP (Palm SDK)",
+	"uiRevision": 2,
+	"plug-ins": true
+}

@@ -1,0 +1,234 @@
+#!/bin/bash
+
+#set -x
+echo
+
+ShowUsage()
+{
+  cat <<-End
+
+Usage: $0 [install|remove|versions]
+
+'install' installs HP webOS PDK packages onto the device.
+'remove' removes the HP webOS PDK packages from the device.
+'versions' shows the versions of the currently-installed packages.
+
+It requires a USB-connected HP webOS device.
+Developer Mode must already be enabled on the device.
+
+End
+}
+
+NEW_PACKAGES="dropbear gdb"
+SHOW_VERSIONS=0
+PKG_DIR="Native-SDK"
+
+case "$1" in
+	"versions")
+		SHOW_VERSIONS=1
+		REMOVE_PKGS=0
+		;;
+	"install")
+		REMOVE_PKGS=0
+		;;
+	"remove")
+		REMOVE_PKGS=1
+		;;
+	*)	ShowUsage
+		exit 1
+		;;
+esac
+
+# Make sure we can find (or are running from) the script dir
+if [ ! -d "${PKG_DIR}" ] ; then
+	if [ -d "/opt/PalmPDK/share/packages/${PKG_DIR}" ] ; then
+		PKG_DIR="/opt/PalmPDK/share/packages/${PKG_DIR}"
+	else
+		echo "ERROR: Required HP webOS PDK packages not found."
+		exit 1
+	fi
+fi
+
+# Make sure novacom is installed
+if [ -z "`which novacom`" ] ; then
+	echo "ERROR: Novacom must be installed in order for this script to work."
+	exit 1
+fi
+
+# Make sure device is connected and in developer mode
+DEVICE=`novacom -l | head -1 | cut -d' ' -f4`
+echo
+
+case "$DEVICE" in
+	"castle-linux")
+		DEV_NAME="Pre"
+		MACHINE="castle"
+		PACKAGES=""
+		echo "Found connected device: Palm ${DEV_NAME}"
+		;;
+	"pixie-linux")
+		DEV_NAME="Pixi"
+		MACHINE="pixie"
+		PACKAGES=""
+		echo "Found connected device: Palm ${DEV_NAME}"
+		;;
+	"emulator")
+		echo "Please exit the HP webOS Emulator and re-run this script."
+		exit 1
+		;;
+	"")
+		echo "ERROR: No connected device found."
+		echo "Connect device and be sure Developer Mode is enabled."
+		exit 1
+		;;
+	*-linux)
+		TARG_ARCH=`novacom run file:///usr/bin/ipkg print_architecture | grep "armv" | cut -d' ' -f2`
+		if [ "${TARG_ARCH}" = "armv7" ] ; then
+			DEV_NAME="device"
+			MACHINE="castle"
+			PACKAGES=""
+			echo "Found connected HP webOS device."
+		elif [ "${TARG_ARCH}" = "armv6" ] ; then
+			DEV_NAME="device"
+			MACHINE="pixie"
+			PACKAGES=""
+			echo "Found connected HP webOS device."
+		else
+			echo "ERROR: Unrecognized/unsupported device found."
+			exit 1
+		fi
+		;;
+	*)
+		echo "ERROR: Unrecognized/unsupported device found."
+		exit 1
+		;;
+esac
+echo
+
+# Make sure device is connected and in developer mode
+#WEBOS_VERSION=`novacom run file://bin/cat /etc/palm-build-info | grep "PRODUCT_VERSION_STRING" | cut -d'=' -f2`
+#if [ "${WEBOS_VERSION:0:10}" != "Palm webOS" ] ; then
+#	echo "ERROR: Only devices with Palm webOS 1.4 (or later) are supported!"
+#	echo
+#	echo "Run Updates app on device to update Palm webOS, or"
+#	echo "go to http://www.palm.com/rom to get webOS Doctor."
+#	echo
+#	exit 1
+#fi
+
+if [ ${REMOVE_PKGS} -eq 1 ] ; then
+	echo "This script will remove PDK packages from your Palm ${DEV_NAME}."
+else
+	if [ ${SHOW_VERSIONS} -ne 1 ] ; then
+		echo "This script will install PDK packages onto your Palm ${DEV_NAME}."
+	fi
+	# if we're installing, add the new packages to the list
+	PACKAGES="${PACKAGES} ${NEW_PACKAGES}"
+fi
+
+if [ ${SHOW_VERSIONS} -ne 1 ] ; then
+	echo
+	echo "Note that your device will be rebooted after this script completes."
+fi
+
+while [ -z $ANSWER ]; do
+read -p "Do you wish to continue? (Y/N):" resp
+case "$resp" in
+ y|Y) ANSWER="y";;
+ n|N) ANSWER="n";;
+ "") ANSWER="n";;
+ *) ;;
+esac
+done
+echo
+if [ "$ANSWER" != "y" ]; then
+	exit 1
+fi
+
+# Display version information for currently-installed packages
+PKG_PATH="${PKG_DIR}/${MACHINE}"
+for PKG in ${PACKAGES} ; do
+	echo -n "Checking package ${PKG}: "
+	VERSION=`novacom run file://usr/bin/mmipkg info ${PKG} | grep Version | cut -d' ' -f2`
+	if [ -n "$VERSION" ] ; then
+		echo "(device has ${VERSION})"
+	else
+		# some packages are new and won't already exist on the device
+		echo "(not on device)"
+	fi
+	# sanity check: make sure we have a package by this name
+	PACKAGE=`find ${PKG_PATH} -name "${PKG}_*"`
+	if [ -z ${PACKAGE} ] ; then
+		echo "ERROR: Required package ${PKG} missing!"
+		exit 1
+	fi
+done
+echo
+
+if [ ${SHOW_VERSIONS} -eq 1 ] ; then
+	echo "Done."
+	echo
+	exit 0
+fi
+
+# Create an empty directory on device in /tmp to hold our packages
+novacom run -- file://bin/rm -rf /tmp/pdk-install
+novacom run -- file://bin/mkdir /tmp/pdk-install
+
+# Copy new package files (if any) to device
+PKG_COUNT=`ls -1 ${PKG_PATH} | grep "\.ipk$" | wc -l`
+if [ $PKG_COUNT -ne 0 ] ; then
+    for PKG in `ls ${PKG_PATH}/*.ipk` ; do
+	echo "Copying package `basename ${PKG}` to device... "
+	BASE_PKG="`basename ${PKG} | cut -d'_' -f1`"
+	# write to /tmp/install with un-versioned filename
+	novacom put file://tmp/pdk-install/${BASE_PKG}.ipk < ${PKG}
+    done
+fi
+echo
+
+# Enable writing to rootfs
+novacom 'run file://usr/sbin/rootfs_open'
+
+# Remove ${NEW_PACKAGES} if we're removing (uninstalling PDK)
+if [ ${REMOVE_PKGS} -eq 1 ] ; then
+	echo "Removing unneeded packages..."
+	OLD_IFS=${IFS}
+	IFS=`echo -en "\n\b"`
+	novacom run -- "file://usr/bin/mmipkg remove ${NEW_PACKAGES}" 2>&1 | while read line ; do echo $line | grep -v "^$" | grep -v "^ " | grep -v "ldconfig" | grep -v "not a symbolic" | grep -v ": Linking" ; done
+	IFS=${OLD_IFS}
+	echo
+fi
+
+# If we have any packages to install...
+if [ -n "${PACKAGES}" ] ; then
+	PKG_LIST=""
+	# Install new packages, in the required ${PACKAGES} order (not random/filesystem order)
+	for PKG in ${PACKAGES} ; do
+		PKG_LIST="${PKG_LIST} /tmp/pdk-install/${PKG}.ipk"
+	done
+
+	#echo "Beginning package install: ${PKG_LIST}"
+	echo "Beginning package install..."
+
+	OLD_IFS=${IFS}
+	IFS=`echo -en "\n\b"`
+	novacom run -- "file://usr/bin/mmipkg install ${PKG_LIST}" 2>&1 | while read line ; do echo $line | grep -v "^$" | grep -v "^ " | grep -v "ldconfig" | grep -v "not a symbolic" | grep -v ": Linking" | grep -v "time stamp" | grep -v "^tar" ; done
+	IFS=${OLD_IFS}
+fi
+
+# Sync rootfs (should make rootfs_open finish faster...)
+echo
+echo "NOTE: Do not disconnect device until you see \"Done.\" message below!"
+echo
+echo "Syncing buffered data to flash..."
+novacom run -- file://bin/sync
+
+# Disable writing to rootfs (reboots device)
+echo
+echo "Rebooting device..."
+echo "NOTE: Do not disconnect device until you see \"Done.\" message below!"
+novacom run -- file://usr/sbin/rootfs_open -r
+
+echo "Done."
+echo

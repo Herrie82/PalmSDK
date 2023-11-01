@@ -1,0 +1,15 @@
+#!/bin/bash
+
+JAVA16="/System/Library/Frameworks/JavaVM.framework/Versions/1.6/"
+JAVA160="/System/Library/Frameworks/JavaVM.framework/Versions/1.6.0/"
+
+if [ -d "$JAVA16" ]; then
+	JAVA=${JAVA16}Commands/java
+elif [ -d "$JAVA160" ];then
+	JAVA=${JAVA160}Commands/java
+else
+	echo "Java 1.6 is not installed. Please update to Java 1.6"
+	exit 1
+fi
+
+exec $JAVA -jar /opt/PalmPDK/share/jars/profile.jar 

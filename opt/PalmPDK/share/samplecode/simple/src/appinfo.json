@@ -1,0 +1,10 @@
+{
+	"title": "SimplePDK",
+	"type": "pdk",
+	"main": "simple",
+    "icon": "pdk_logo_64x64.png",
+	"id": "com.palmdts.app.simplepdk",
+	"version": "1.2.2",
+	"vendor": "HP",
+    "requiredMemory": 15
+}

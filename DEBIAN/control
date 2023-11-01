@@ -1,0 +1,9 @@
+Package: palm-sdk
+Version: 3.0.5-svn528736-pho676
+Architecture: i386
+Maintainer: Steve Lemke <steve.lemke@palm.com>
+Installed-Size: 549164
+Section: PalmTools
+Priority: extra
+Description: Palm SDK
+ Palm webOS SDK: emulator image, cmd-line tools, framework, samples, etc.
