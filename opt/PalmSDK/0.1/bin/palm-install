@@ -17,7 +17,7 @@ where_am_i()
 
 java_version()
 {
-	java -version 2>&1 | grep "^java version" | cut -d ' ' -f 3 | cut -c 2-4
+	java -version 2>&1 | grep "^openjdk version\|^java version" | cut -d ' ' -f 3 | cut -d '.' -f 1 | cut -c 2-4
 }
 
 # check java version
